@@ -14,7 +14,7 @@
  *   job_logs     tail a job's output
  *   job_kill     stop a running job
  *
- * And the commands: /jobs, /job-logs, /job-kill, /job-clean
+ * And the commands: /async, /jobs, /job-logs, /job-kill, /job-history
  *
  * Design constraints honoured here:
  * - Jobs survive the model going idle: each terminal job is delivered once, and the
