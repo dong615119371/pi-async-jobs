@@ -878,6 +878,7 @@ export default function (pi: ExtensionAPI) {
 	// budget. Managing it here keeps every timeout decision in one place.
 	//
 	// An explicit value from the model is always respected - the injector only fills a gap.
+	// Harmless when `es` is not installed: the handler simply never fires.
 	const ES_TIMEOUT_SECONDS = 30;
 
 	pi.on("tool_call", (event) => {
