@@ -344,9 +344,18 @@ export default function (pi: ExtensionAPI) {
 		const recovered = engine.recover();
 		if (recovered.length > 0 && ctx.hasUI) {
 			ctx.ui.notify(
-				`${recovered.length} background job(s) from a previous session were interrupted:\n` +
-					recovered.map((j) => `  ${j.id}  ${j.name}`).join("\n") +
-					`\nTheir records are in ${store.dir()}`,
+				// Say only what is known. A job listed here was still marked `running` when the
+				// previous session ended, but its process may well have kept going and finished
+				// afterwards - an out-of-session `delegate` does exactly that. Calling it
+				// "interrupted" would be a guess stated as fact.
+				//
+				// Only the id and kind are shown. `name` carries the first characters of the
+				// command or task, which routinely holds paths, code or other things the user did
+				// not ask to see on startup.
+				`${recovered.length} background job(s) were still running when the last session ended.\n` +
+					`Their current state is unknown - check with job_status:\n` +
+					recovered.map((j) => `  ${j.id}  (${j.kind})`).join("\n") +
+					`\nRecords: ${store.dir()}`,
 				"warning",
 			);
 		}

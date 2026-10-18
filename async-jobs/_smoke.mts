@@ -220,6 +220,30 @@ async function main(): Promise<void> {
 	check("recovered flag set", store2.read("aj-stale01")?.recovered === true);
 	check("takeRecovered empties", engine2.takeRecovered().length === 1 && engine2.takeRecovered().length === 0);
 
+
+	// ------------------------------------------------------- T13b long command
+	// A command longer than `bash -c` can carry on argv must still run.
+	//
+	// Measured: Git Bash's `bash -c` takes 8182 bytes and rejects 8187. Above that it
+	// fails with `unexpected EOF while looking for matching '"'` - a quote error for a
+	// string that was truncated before it arrived, which sends you debugging the wrong
+	// thing. `engine.ts` routes long commands over stdin instead; this pins that.
+	console.log("\nT13b: command longer than the argv limit");
+	{
+		const storeL = new JobStore(path.join(root, "longcmd"));
+		const engineL = new JobEngine({ store: storeL, target: { sendMessage: () => {}, hasUI: false, notify: () => {} } });
+		const padding = "x".repeat(9000);
+		const h = engineL.startProcess({
+			command: `echo LONGCMD_OK_${padding} | cut -c1-20`,
+			name: "long",
+			timeoutSeconds: 30,
+		});
+		const settled = await waitFor(() => storeL.read(h.id)?.state !== "running", 20000, "long command");
+		check("long command ran", settled, String(storeL.read(h.id)?.state));
+		check("long command exited 0", storeL.read(h.id)?.exitCode === 0, String(storeL.read(h.id)?.exitCode));
+		check("long command produced output", (storeL.read(h.id)?.output ?? "").includes("LONGCMD_OK"), JSON.stringify((storeL.read(h.id)?.output ?? "").slice(0, 40)));
+	}
+
 	console.log("\nT13: store pruning");
 	const store3 = new JobStore(path.join(root, "prune"));
 	store3.init();

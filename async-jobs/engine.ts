@@ -376,8 +376,24 @@ export class JobEngine {
 
 		// Some shells (notably the legacy WSL bash) take the command on stdin rather than
 		// as an argument. Honouring this is what keeps behaviour identical to Pi's.
-		const viaStdin = shell.commandTransport === "stdin";
-		const spawnArgs = viaStdin ? shell.args : [...shell.args, options.command];
+		//
+		// A long command goes the same way even when the shell does not ask for it. Measured:
+		// Git Bash's `bash -c` accepts 8182 bytes and rejects 8187, and a delegate's task is
+		// base64-expanded well past that. Sending the command on argv above the limit fails
+		// with a misleading `unexpected EOF while looking for matching '"'` - bash is quoting
+		// a string that was truncated before it ever arrived. Dropping the `-c` flag makes the
+		// shell read a script from stdin instead, which has no such ceiling.
+		const MAX_ARGV_COMMAND_BYTES = 7000;
+		let viaStdin = shell.commandTransport === "stdin";
+		let spawnArgs: string[];
+		if (viaStdin) {
+			spawnArgs = shell.args;
+		} else if (options.command.length > MAX_ARGV_COMMAND_BYTES) {
+			viaStdin = true;
+			spawnArgs = shell.args.filter((a) => a !== "-c");
+		} else {
+			spawnArgs = [...shell.args, options.command];
+		}
 
 		let child: ChildProcess;
 		try {
