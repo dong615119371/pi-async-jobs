@@ -269,7 +269,7 @@ export class JobEngine {
 		const record: JobRecord = {
 			id,
 			name: (options.name ?? options.label ?? command).slice(0, 120),
-			kind: "process",
+			kind: options.kind ?? "process",
 			channel: options.channel ?? "generic",
 			state: "running",
 			startedAt: this.now(),
@@ -359,7 +359,7 @@ export class JobEngine {
 		const record: JobRecord = {
 			id,
 			name: (options.name ?? options.label ?? command).slice(0, 120),
-			kind: "process",
+			kind: options.kind ?? "process",
 			channel: options.channel ?? "generic",
 			state: "running",
 			startedAt: this.now(),

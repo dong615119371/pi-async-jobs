@@ -95,6 +95,14 @@ export interface StartProcessOptions {
 	triggerOnCompletion?: boolean;
 	/** Human-readable label used in notifications. */
 	label?: string;
+	/**
+	 * What kind of work this is. Defaults to `"process"`.
+	 *
+	 * A consumer extension uses `"delegate"` so its jobs are distinguishable in the
+	 * status list and in recovery reports. Nothing routes on this value - delivery goes
+	 * by `channel` - so a wrong value mislabels a job without breaking it.
+	 */
+	kind?: JobKind;
 	channel?: JobChannel;
 	/**
 	 * Called once when this job settles, in place of the engine's global notifiers.

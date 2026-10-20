@@ -48,6 +48,8 @@ export interface StartOptionsLike {
 	command: string;
 	name?: string;
 	label?: string;
+	/** What kind of work this is. Defaults to "process". Nothing routes on it. */
+	kind?: string;
 	channel?: string;
 	timeoutSeconds?: number;
 	onSettle?: (record: JobRecordLike) => void;

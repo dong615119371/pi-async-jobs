@@ -214,7 +214,36 @@ async function main(): Promise<void> {
 		await fsp.promises.rm(store.dir(), { recursive: true, force: true });
 	}
 
-	console.log("\nH6: version mismatch is reported, not hidden");
+	console.log("\nH6: the service passes kind through");
+	{
+		resetChannels();
+		const { engine, store } = makeEngine("h6kind");
+		const pi = fakePi();
+		publishHostService(pi as never, engine);
+		const link = connectToHost(pi as never);
+		pi.startSession();
+		const svc = link.service() as HostService;
+
+		// Without this, `JobKind`'s "delegate" is an unreachable literal: the engine used
+		// to hardcode "process", so a consumer could not label its jobs even though the
+		// type said it could.
+		const handle = svc.startProcess({
+			command: "echo KIND",
+			kind: "delegate",
+			channel: "kind-channel",
+			timeoutSeconds: 30,
+		});
+		const settled = await waitFor(() => engine.get(handle.id)?.state !== "running", 20000, "H6kind");
+		check("job settled", settled);
+		check("kind survives to the record", engine.get(handle.id)?.kind === "delegate", String(engine.get(handle.id)?.kind));
+
+		// And the default is unchanged for everyone who does not pass one.
+		const plain = svc.startProcess({ command: "echo PLAIN", timeoutSeconds: 30 });
+		check("kind defaults to process", engine.get(plain.id)?.kind === "process", String(engine.get(plain.id)?.kind));
+		await fsp.promises.rm(store.dir(), { recursive: true, force: true });
+	}
+
+	console.log("\nH7: version mismatch is reported, not hidden");
 	{
 		resetChannels();
 		const { engine, store } = makeEngine("h6");
