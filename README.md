@@ -34,10 +34,10 @@
 **推荐从 git 安装**，可以锁定版本：
 
 ```bash
-pi install git:github.com/dong615119371/pi-async-jobs@v0.1.0
+pi install git:github.com/dong615119371/pi-async-jobs@v0.1.1
 ```
 
-不带 `@v0.1.0` 会装最新的 `main`，适合想跟开发进度的情况。
+不带 `@v0.1.1` 会装最新的 `main`，适合想跟开发进度的情况。
 
 也可以直接用目录：把 `async-jobs/` 整个拷进 Pi 的 extensions 目录（位置随安装方式不同，见 Pi 官方文档）。
 
