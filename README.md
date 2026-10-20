@@ -29,11 +29,13 @@
 
 ## 安装
 
-从 npm 装：
+从 git 装（推荐，可锁定版本）：
 
 ```bash
-pi install npm:pi-async-jobs
+pi install git:github.com/dong615119371/pi-async-jobs@v0.1.0
 ```
+
+不带 `@v0.1.0` 会装最新的 `main`，适合想跟开发进度的情况。
 
 也可以直接用目录：把 `async-jobs/` 整个拷进 Pi 的 extensions 目录（位置随安装方式不同，见 Pi 官方文档）。
 
