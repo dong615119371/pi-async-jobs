@@ -3,6 +3,8 @@
 我们为 Pi 的 agent loop 加入了「后台作业」能力！慢命令不再占住整个回合！
 
 > ⚠️ 这个插件目前还处于实验性质的架构探索插件 如需使用在生产场景上 请谨慎使用！
+>
+> **本项目的绝大部分代码由 vibe coding 生成**，请带着这个前提使用和审阅。
 
 ## 怎么工作的
 
@@ -38,8 +40,6 @@ pi install git:github.com/dong615119371/pi-async-jobs@v0.1.0
 不带 `@v0.1.0` 会装最新的 `main`，适合想跟开发进度的情况。
 
 也可以直接用目录：把 `async-jobs/` 整个拷进 Pi 的 extensions 目录（位置随安装方式不同，见 Pi 官方文档）。
-
-> npm 包正在准备中，预计下个版本提供。见文末「发布状态」。
 
 运行时数据落在 `<Pi agent dir>/async-jobs/`：
 
@@ -227,13 +227,3 @@ node async-jobs/_stress.mts
 ## License
 
 MIT。见 `LICENSE`。
-
-## 发布状态
-
-目前只有 git 一个渠道。npm 包正在准备中，预计下个版本提供；届时安装方式会多一种：
-
-```bash
-pi install npm:pi-async-jobs
-```
-
-在那之前，`git:` 安装与 npm 安装得到的代码完全相同，区别只是获取途径。

@@ -4,6 +4,12 @@ async-jobs 插件的所有重要变更都记录在此。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 计划
+
+- **发布到 npm**：届时可以 `pi install npm:pi-async-jobs`。目前只能从 git 安装。
+
 ## [0.1.0] - 2026-10-18
 
 ### 新增
@@ -24,8 +30,8 @@ async-jobs 插件的所有重要变更都记录在此。
 
 ### 已知行为
 
-- **子代理不能开后台作业**：`PI_SUBAGENT_DEPTH > 0` 时工具直接拒绝，防止任务层层外抛。
+- **无头会话不提供后台作业**：`ctx.hasUI` 为假时（`--mode json`、`--print`）不做异步化，`bash` 直接走同步实现。没有用户看着的会话里，作业号无处可送，也没人能停它。
 
 ### 测试
 
-- 共 10 个测试文件（`async-jobs/_*.mts`），合计 **398 条断言全部通过**（PASS 398 / FAIL 0），进程退出码均为 0。
+- 共 10 个测试文件（`async-jobs/_*.mts`），合计 **401 条断言全部通过**（PASS 401 / FAIL 0），进程退出码均为 0。
