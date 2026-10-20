@@ -1,13 +1,13 @@
 {
-  "name": "pi-opencode-delegate",
+  "name": "pi-delegate",
   "version": "0.1.0",
-  "description": "Background delegation to OpenCode's free-tier models, for the pi-async-jobs host.",
+  "description": "Outsource work to the OpenCode CLI. Synchronous by default; gains a background delegate when the async-jobs host is installed.",
   "keywords": [
     "pi-package",
     "pi",
     "opencode",
     "delegate",
-    "async"
+    "outsource"
   ],
   "license": "MIT",
   "author": "白遇冬夏",
@@ -18,8 +18,11 @@
   },
   "files": [
     "index.ts",
+    "delegate.ts",
     "channel.ts",
     "consumer.ts",
+    "cli.ts",
+    "models.ts",
     "README.md",
     "LICENSE"
   ],

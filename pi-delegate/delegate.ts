@@ -18,6 +18,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { buildDelegateCommand, listFreeModels, openCodeChannel } from "./channel.ts";
 import { connectToHost } from "./consumer.ts";
+import { findOpencodeCli } from "./cli.ts";
 
 /**
  * The framework's tools are registered but NOT activated by default.
@@ -42,44 +43,23 @@ const DEFAULT_AGENT = "build";
 const AGENTS = ["build", "plan", "explore", "general"] as const;
 const PREVIEW_CHARS = 1200;
 
-/**
- * Locate the OpenCode CLI.
- *
- * The `resources` copy under LOCALAPPDATA is stable across upgrades; the versioned
- * APPDATA directories move, so they are only a fallback.
- */
-function findOpencodeCli(): string | null {
-	const base = process.platform === "win32" ? "opencode-cli.exe" : "opencode-cli";
-	const candidates: string[] = [];
-	if (process.env.OPENCODE_CLI) candidates.push(process.env.OPENCODE_CLI);
-	if (process.env.LOCALAPPDATA) {
-		candidates.push(path.join(process.env.LOCALAPPDATA, "Programs", "@opencodedesktop", "resources", base));
-	}
-	if (process.env.APPDATA) {
-		const root = path.join(process.env.APPDATA, "ai.opencode.desktop", "cli");
-		try {
-			for (const dir of fs.readdirSync(root).sort().reverse()) candidates.push(path.join(root, dir, base));
-		} catch {
-			/* no versioned install */
-		}
-	}
-	candidates.push(base);
-	for (const candidate of candidates) {
-		try {
-			if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
-		} catch {
-			/* try the next */
-		}
-	}
-	return null;
-}
-
 function preview(text: string, max = PREVIEW_CHARS): string {
 	if (text.length <= max) return text;
 	return `${text.slice(0, max)}...`;
 }
 
-export default function (pi: any) {
+/**
+ * Register the async delegate tool, leaving it inactive.
+ *
+ * Activation is the caller's decision: `delegate_async` only makes sense when the
+ * async-jobs host is actually present. An entry point that cannot see the host leaves
+ * the tool registered but dormant, so installing this package alone still yields a
+ * working synchronous `opencode` tool and nothing broken.
+ *
+ * Returns an `activate` function that registers the renderer and puts the tool into the
+ * active set. It is safe to call repeatedly.
+ */
+export function registerDelegateTool(pi: any): () => boolean {
 	const host = connectToHost(pi);
 	let svc: any = null;
 
@@ -277,4 +257,25 @@ export default function (pi: any) {
 			return new Text(theme.fg("toolOutput", first?.type === "text" ? first.text : ""), 0, 0);
 		},
 	});
+
+	/**
+	 * Turn the tool on, if the host is there.
+	 *
+	 * Two things happen together: the renderer is registered (so results from this
+	 * channel render as delegate output rather than raw JSONL) and the tool joins the
+	 * active set. Doing one without the other would give either a tool whose results
+	 * arrive as garbage or a renderer nobody can reach.
+	 *
+	 * Returns false when no host is present, which is not an error - it just means this
+	 * package is running standalone.
+	 */
+	return () => {
+		const current = getService();
+		if (!current) return false;
+		current.registerChannel(openCodeChannel);
+		const active = new Set(pi.getActiveTools());
+		active.add("delegate_async");
+		pi.setActiveTools([...active]);
+		return true;
+	};
 }
