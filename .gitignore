@@ -1,0 +1,11 @@
+# npm 打包产物
+*.tgz
+
+# 依赖（本包只有 peerDependencies，由 Pi 宿主提供）
+node_modules/
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

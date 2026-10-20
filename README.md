@@ -29,7 +29,13 @@
 
 ## 安装
 
-把 `async-jobs/` 整个目录拷进 Pi 的 extensions 目录（位置随安装方式不同，见 Pi 官方文档）。
+从 npm 装：
+
+```bash
+pi install npm:pi-async-jobs
+```
+
+也可以直接用目录：把 `async-jobs/` 整个拷进 Pi 的 extensions 目录（位置随安装方式不同，见 Pi 官方文档）。
 
 运行时数据落在 `<Pi agent dir>/async-jobs/`：
 
