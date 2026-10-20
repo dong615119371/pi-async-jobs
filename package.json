@@ -22,11 +22,15 @@
   "pi": {
     "extensions": [
       "./async-jobs/index.ts"
+    ],
+    "skills": [
+      "./skills"
     ]
   },
   "files": [
     "async-jobs/*.ts",
     "!async-jobs/_*.mts",
+    "skills/**/*.md",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
