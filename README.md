@@ -90,31 +90,32 @@ pi install git:github.com/dong615119371/pi-async-jobs@v0.1.2
 
 ```text
 你：跑一下测试
-模型：bash(command: "pytest -q", expectSeconds: 45)
-       ↓ 45 秒还没结束，自动转后台
+模型：bash(command: "pytest -q")
+       ↓ 等待时长到达阈值，命令仍未返回
+         强制转后台，不再继续等待它的结果
        "作业 aj-3f9c1d2e 已在后台运行，结果会自己送回来。"
 
 你：那先把 README 里的安装章节改成 npm
 模型：（接着改 README，无需等测试）
 
-       ⋮ 约一分钟后
+       ⋮ 一分钟后
 
 模型：（收到作业结果）测试跑完了：3 failed, 47 passed。
 ```
 
-关键点：模型没有在等，你也没有。那个回合结束了，作业结果在新的一回合里回来。
+关键点：命令超过设定的等待阈值后，强制转后台并且不再继续等待它的结果；模型可以接着做那些不需要（或不必等）这个结果的其它任务。那个回合到这里就结束了，作业结果会在新的一回合里回来。
 
 参数怎么给：
 
 ```text
 bash(command: "git status")
-  → 按默认宽限期（20 秒）等，秒回就正常返回结果
+  → 不传 expectSeconds：按默认宽限期（20 秒）等，秒回就正常返回结果
 
 bash(command: "npm run build", mode: "background")
-  → 直接转后台，不等
+  → 完全不等待，立即转后台
 
 bash(command: "pytest -q", expectSeconds: 45)
-  → 估 45 秒，到了还没完就转后台
+  → 你估它要跑 45 秒：就等 45 秒，到了还没完就转后台
 ```
 
 结果会自己送回来，无需轮询。需要主动查看时用工具：
