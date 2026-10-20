@@ -13,7 +13,11 @@
   "author": "白遇",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/PLACEHOLDER/pi-async-jobs.git"
+    "url": "git+https://github.com/dong615119371/pi-async-jobs.git"
+  },
+  "homepage": "https://github.com/dong615119371/pi-async-jobs#readme",
+  "bugs": {
+    "url": "https://github.com/dong615119371/pi-async-jobs/issues"
   },
   "pi": {
     "extensions": [
