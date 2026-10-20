@@ -46,6 +46,7 @@ import {
 	renderAndPersist,
 } from "./channels.ts";
 import { registerManagedBash } from "./managed-bash.ts";
+import { publishHostService } from "./host.ts";
 import { JobStore } from "./store.ts";
 import type { JobRecord } from "./types.ts";
 
@@ -909,6 +910,12 @@ export default function (pi: ExtensionAPI) {
 	// The built-in channel is registered like any other. Registration is idempotent, so a
 	// reloaded extension replaces its own entry instead of stacking duplicates.
 	registerGenericChannel();
+
+	// Hand other extensions a narrow slice of this one: a way to start jobs and a way to
+	// register a renderer. Without it a second extension cannot contribute jobs at all -
+	// the engine is a closure variable and module imports do not share state across
+	// extensions (see host.ts).
+	publishHostService(pi, engine);
 }
 
 /**
