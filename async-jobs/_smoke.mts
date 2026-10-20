@@ -67,7 +67,7 @@ async function main(): Promise<void> {
 	// ---------------------------------------------------------------- T1 basics
 	console.log("T1: basic run and completion");
 	const a = engine.startProcess({ command: "echo HELLO_FROM_JOB", name: "basic", timeoutSeconds: 30 });
-	check("returns an id", /^aj-/.test(a.id), a.id);
+	check("returns an id in <tag>-<n> form", /^[0-9A-Z]{4}-\d+$/.test(a.id), a.id);
 	check("record persisted", fs.existsSync(path.join(root, `${a.id}.json`)));
 	await waitFor(() => engine.get(a.id)?.state !== "running", 15000, "T1 completion");
 	const recA = engine.get(a.id);
@@ -99,6 +99,16 @@ async function main(): Promise<void> {
 		engine.startProcess({ command: `sleep 2; echo N${n}`, name: `c${n}`, timeoutSeconds: 60 }),
 	);
 	check("9 accepted", many.length === 9);
+	// Ids are `<session-tag>-<counter>`. Every job from one session shares the tag and
+	// the counter only goes up, so "the 3rd job of this session" is something you can
+	// say. A random blob could not answer that.
+	const tagsSeen = new Set(many.map((h) => h.id.split("-")[0]));
+	check("all jobs share one session tag", tagsSeen.size === 1, [...tagsSeen].join(","));
+	check(
+		"ids carry no duplicates",
+		new Set(many.map((h) => h.id)).size === many.length,
+		many.map((h) => h.id).join(" "),
+	);
 	const immediate = engine.activeCount();
 	check("at most 7 running at once", immediate <= 7, `active=${immediate}`);
 	check("2 queued", engine.queuedCount() === 2, `queued=${engine.queuedCount()}`);

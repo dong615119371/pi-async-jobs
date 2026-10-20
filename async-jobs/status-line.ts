@@ -81,8 +81,9 @@ export function formatFooter(running: number, queued: number): string {
  * The lines shown above the editor, or an empty array when nothing is in flight.
  *
  * Columns are padded so the eye can scan down `id / elapsed / what it is` without the
- * label wandering. Ids are a fixed width (`aj-` plus eight hex characters) and elapsed
- * time is padded to six, which together cover every case up to `999h`.
+ * label wandering. Ids are `<tag>-<n>` - six characters plus however many digits the
+ * counter has reached - and elapsed time is padded to six, which together cover every
+ * case up to `999h`.
  *
  * `waiting` carries the ids still queued for a slot. They must be marked, not just
  * counted: they are `running` records that have not started, and showing a ticker next

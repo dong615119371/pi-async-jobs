@@ -93,7 +93,7 @@ pi install git:github.com/dong615119371/pi-async-jobs@v0.1.3
 Agent：bash(command: "pytest -q")
        ↓ 等待时长到达阈值，命令仍未返回
          强制转后台，不再继续等待它的结果
-       "作业 aj-3f9c1d2e 已在后台运行，结果会自己送回来。"
+       "作业 P3AD-1 已在后台运行，结果会自己送回来。"
 
 用户：那先把 README 里的安装章节改成 npm
 Agent：（接着改 README，无需等测试）
@@ -122,8 +122,8 @@ bash(command: "pytest -q", expectSeconds: 45)
 
 ```text
 job_status                   # 列出后台作业（可 cleanup / verbose）
-job_logs aj-1a2b3c4d         # 看某作业的最新输出
-job_kill aj-1a2b3c4d         # 停止某作业
+job_logs P3AD-1         # 看某作业的最新输出
+job_kill P3AD-1         # 停止某作业
 job_history                  # 翻历史作业（跨会话）
 ```
 

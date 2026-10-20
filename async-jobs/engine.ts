@@ -25,7 +25,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import * as path from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomInt } from "node:crypto";
 import { existsSync as fsExistsSync, openSync, writeSync, closeSync } from "node:fs";
 import { killProcessTree, isProcessAlive } from "./process.ts";
 import { StreamDecoder } from "./encoding.ts";
@@ -50,7 +50,17 @@ const MAX_TRACKED = 40;
  * quietly inverting the behaviour it was meant to lengthen.
  */
 const MAX_TIMER_MS = 2_147_483_647;
-const MAX_RETAINED = 25;
+/**
+ * How many finished jobs to keep on disk.
+ *
+ * Low enough that the directory stays small (a record is ~2 KB and its output is
+ * capped by TAIL_BYTES, so 100 jobs is under 2 MB), high enough that a day of
+ * normal use does not evict the job you were about to look up. At 25 a single
+ * burst of concurrent work could clear the morning's history on its own.
+ *
+ * `listAll()` sorts newest first, so what survives is the recent end.
+ */
+const MAX_RETAINED = 100;
 const RETENTION_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_TIMEOUT_SECONDS = 30 * 60;
 const TAIL_BYTES = 16 * 1024;
@@ -116,6 +126,19 @@ export class JobEngine {
 	private shutdownDone = false;
 	/** Recovery report from the previous session, surfaced once on session start. */
 	private recovered: JobRecord[] = [];
+	/**
+	 * This session's short tag, and how many background jobs it has started.
+	 *
+	 * Ids are `<tag>-<n>` rather than a random blob so that "the 3rd job of this
+	 * session" is a thing you can say. The tag is reused for every job in the
+	 * session, so two sessions running at once cannot produce the same id - their
+	 * counters each start at 1 but the tags differ.
+	 *
+	 * Chosen lazily: the engine is constructed before `recover()` has looked at
+	 * disk, and the tag must not collide with a tag already in use there.
+	 */
+	private sessionTag: string | null = null;
+	private sessionSeq = 0;
 
 	constructor(options: EngineOptions) {
 		this.store = options.store;
@@ -133,6 +156,44 @@ export class JobEngine {
 	 * they are marked interrupted and reported - better a truthful "we do not know
 	 * how this ended" than a silent disappearance.
 	 */
+	/**
+	 * This session's tag: four base-36 characters, re-rolled until it does not
+	 * collide with the tag of any job currently on disk.
+	 *
+	 * Collision here is the one that matters - a fresh session starting at seq 1
+	 * with a tag already in use would hand out an id that names an existing job.
+	 * Inside a session there is no collision at all, because the counter only
+	 * goes up.
+	 *
+	 * 36^4 = 1.68M tags against at most MAX_RETAINED live jobs makes a re-roll~ 
+	 * vanishingly rare, but picking without checking would make collision possible
+	 * rather than improbable, and the failure is silent data loss.
+	 *
+	 * Upper-case only. This becomes a filename, and Windows does not distinguish
+	 * `K3M7` from `k3m7` - two sessions whose tags differ only in case would write
+	 * to the same file. Lower-case would work too; one case, never both.
+	 */
+	private tag(): string {
+		if (this.sessionTag !== null) return this.sessionTag;
+		const taken = new Set<string>();
+		for (const record of this.store.listAll()) {
+			const dash = record.id.indexOf("-");
+			if (dash > 0) taken.add(record.id.slice(0, dash));
+		}
+		const ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+		let candidate: string;
+		do {
+			candidate = Array.from({ length: 4 }, () => ALPHABET[randomInt(0, ALPHABET.length)]!).join("");
+		} while (taken.has(candidate));
+		this.sessionTag = candidate;
+		return candidate;
+	}
+
+	/** Next job id: `<tag>-<n>`, counting this session's background jobs. */
+	private nextId(): string {
+		return `${this.tag()}-${++this.sessionSeq}`;
+	}
+
 	recover(): JobRecord[] {
 		this.store.init();
 		const stale: JobRecord[] = [];
@@ -204,7 +265,7 @@ export class JobEngine {
 		const command = options.command.trim();
 		if (command.length === 0) throw new Error("command must not be empty.");
 
-		const id = `aj-${randomUUID().slice(0, 8)}`;
+		const id = this.nextId();
 		const record: JobRecord = {
 			id,
 			name: (options.name ?? options.label ?? command).slice(0, 120),
@@ -294,7 +355,7 @@ export class JobEngine {
 		const command = options.command.trim();
 		if (command.length === 0) throw new Error("command must not be empty.");
 
-		const id = `aj-${randomUUID().slice(0, 8)}`;
+		const id = this.nextId();
 		const record: JobRecord = {
 			id,
 			name: (options.name ?? options.label ?? command).slice(0, 120),
