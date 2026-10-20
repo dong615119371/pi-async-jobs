@@ -38,6 +38,23 @@ delegate_async(tasks: [
 返回作业号后本回合就结束了。结果稍后自己回来。
 
 **路径必须写绝对路径**——OpenCode 忽略工作目录，永远在用户家目录跑。
+## 路径必须写绝对路径
+
+**所有路径必须绝对**——OpenCode 忽略工作目录，永远在用户家目录跑。相对路径会静默指错地方。
+
+## 不要走代理
+
+OpenCode 对免费模型的 IP 风控很严格，报错原文：
+
+```
+OpenCode's free models aren't available from your current network
+because we've detected abusive traffic from this IP address.
+This isn't related to your account.
+```
+
+注意是 **this IP address**，不是你的用量。代理节点是共享的，同一个出口 IP 上任何人的流量都算在它头上——别人把你的额度用光了，你这边只会看到 403。
+
+切换到直连后同一个账号立刻恢复。表现：`state: killed`、`exitCode: 1`、输出里有 `provider.auth`。
 
 ## 三个文件
 
