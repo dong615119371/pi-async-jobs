@@ -1,10 +1,36 @@
-# async-jobs
+# pi-async-jobs
+
+> 中文说明 · [English](README.en.md)
+
+<p>
+  <img alt="tests" src="https://img.shields.io/badge/assertions-436-brightgreen">
+  <img alt="suites" src="https://img.shields.io/badge/suites-11-blue">
+  <img alt="version" src="https://img.shields.io/badge/version-0.2.0-orange">
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-lightgrey">
+  <img alt="platform" src="https://img.shields.io/badge/platform-Windows%20tested-informational">
+</p>
 
 我们为 Pi 的 agent loop 加入了「后台作业」能力！慢命令不再占住整个回合！
 
 > ⚠️ 这个插件目前还处于实验性质的架构探索插件 如需使用在生产场景上 请谨慎使用！
 >
 > **本项目的绝大部分代码由 vibe coding 生成**，请带着这个前提使用和审阅。
+
+## 生态
+
+这个仓库是**宿主**。它能把作业能力借给别的扩展，让它们各做一个渠道，而不是各写一套调度。
+
+| 包 | 是什么 |
+| --- | --- |
+| **`pi-async-jobs`**（本仓） | 调度核心：进程、持久化、并发、通知、渠道注册表 |
+| [`pi-delegate`](https://github.com/dong615119371/pi-delegate) | 第一个接入者：把活外包给 OpenCode CLI。自带同步与异步两把工具 |
+
+两个包**可以单独装，也可以一起装**：
+
+- 只装本包 → 有后台作业，没有外包
+- 两个都装 → 后台作业 + 同步外包 + 异步外包（`delegate_async` 自动激活）
+
+想写第三个接入者？看 [给其他扩展用](#给其他扩展用)。
 
 ## 怎么工作的
 
@@ -198,7 +224,9 @@ job_history                  # 翻历史作业（跨会话）
 
 **加载顺序无关**，两边都会在 `session_start` 再握一次手，宿主还会广播 `async-jobs:host-ready`。版本不符时消费者拒绝激活，而不是等到某次调用才在工具内部抛错。
 
-现成的例子：[`pi-delegate`](https://github.com/dong615119371/pi-delegate)。
+现成的例子：[`pi-delegate`](https://github.com/dong615119371/pi-delegate) —— 它是这个服务面唯一的真实使用者，也是判断这套接口是否好用的依据。它注册了 `opencode` 渠道，投递 `kind: "delegate"` 的作业。
+
+它证明了这套设计能跑通：两个包**各自独立的 git 仓库、独立的版本号、独立的发布节奏**，靠 `pi.events` 在运行时握手，没有任何编译期依赖。
 
 ## 输出编码
 

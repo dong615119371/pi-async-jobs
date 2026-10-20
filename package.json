@@ -33,7 +33,8 @@
     "skills/**/*.md",
     "README.md",
     "CHANGELOG.md",
-    "LICENSE"
+    "LICENSE",
+    "README.en.md"
   ],
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
