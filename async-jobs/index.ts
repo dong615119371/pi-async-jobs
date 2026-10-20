@@ -68,9 +68,6 @@ export const ASYNC_JOB_TOOLS = ["job_status", "job_logs", "job_kill", "job_histo
 
 const PREVIEW_CHARS = 1200;
 
-/** Jobs started by a subagent are refused: delegation must not recurse. */
-const SUBAGENT_DEPTH_ENV = "PI_SUBAGENT_DEPTH";
-
 function jobRoot(): string {
 	return path.join(getAgentDir(), "async-jobs");
 }
@@ -134,10 +131,13 @@ function digest(record: JobRecord): string {
 }
 
 export default function (pi: ExtensionAPI) {
-	// Delegation is one level deep: a subagent must not spawn background jobs, or a
-	// task could migrate outward forever and never come back.
-	const depth = Number.parseInt(process.env[SUBAGENT_DEPTH_ENV] ?? "0", 10) || 0;
-	if (depth > 0) return;
+	// Background jobs need a session someone is watching. A headless run (`--mode json`,
+	// `--print`) has no user to interrupt, so a job that goes to the background there has
+	// nobody to hand its result to - and nobody to stop it.
+	//
+	// Asked as "what environment am I running in", not "who started me": this way nothing
+	// here needs to know that a caller could be another agent.
+	let interactive = false;
 
 	const store = new JobStore(jobRoot());
 
@@ -780,7 +780,8 @@ export default function (pi: ExtensionAPI) {
 	// "Extension runtime not initialized", and a try/catch around it would swallow the
 	// failure and leave the mode silently off (measured exactly that).
 	pi.on("session_start", (_event, ctx) => {
-		if (!readModeEnabled()) return;
+		interactive = ctx.hasUI === true;
+		if (!interactive || !readModeEnabled()) return;
 		try {
 			const result = applyMode(true);
 			if (ctx.hasUI && result.unexpected.length > 0) {
@@ -899,7 +900,9 @@ export default function (pi: ExtensionAPI) {
 
 	registerManagedBash(pi, {
 		engine,
-		isEnabled: readModeEnabled,
+		// Async mode is a session-only capability. In a headless run there is no user to see
+		// the job id, so the override hands off to the built-in synchronous bash instead.
+		isEnabled: () => interactive && readModeEnabled(),
 		getGraceMs: readGraceMs,
 	});
 
