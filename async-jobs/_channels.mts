@@ -239,6 +239,46 @@ resetChannels();
 	check("and it is not empty", d.length > 0, JSON.stringify(d));
 }
 
+console.log("\nC10b: whitespace, a broken fallback, and a file the tail never saw");
+resetChannels();
+{
+	// Three separate ways the delivery path could still lose a result, all found by an
+	// outside audit and all reachable without any caller doing something exotic.
+
+	// 1. Whitespace is not empty by `||`, but it reads as empty to whoever receives it.
+	registerChannel({ name: "spaces", render: () => "   \n\t " });
+	const ws = renderForDelivery(record({ channel: "spaces" }), ctx);
+	check("whitespace-only render falls back", ws.includes("hello"), JSON.stringify(ws));
+
+	// 2. A renderer can corrupt the record before throwing - it holds the live object.
+	//    The old fallback then threw on `record.output.trim()`, the exception escaped
+	//    `renderForDelivery`, and the caller's catch discarded the result entirely.
+	registerChannel({
+		name: "corrupting",
+		render: (rec) => {
+			(rec as unknown as { output: unknown }).output = { not: "a string" };
+			throw new Error("renderer failed after corrupting the record");
+		},
+	});
+	let survived = "";
+	try {
+		survived = renderForDelivery(record({ channel: "corrupting" }), ctx);
+	} catch (error) {
+		survived = `THREW: ${String(error)}`;
+	}
+	check("a corrupting renderer cannot make delivery throw", !survived.startsWith("THREW:"), survived);
+	check("and delivery still says something useful", survived.includes("aj-test"), survived);
+
+	// 3. `record.output` is the in-memory tail and is absent on a record read back from
+	//    disk. The file usually still has content; claiming "(no output)" is wrong.
+	const fileCtx = {
+		tailOutput: () => ({ text: "CONTENT THAT ONLY EXISTS IN THE FILE", totalBytes: 38 }),
+	};
+	const fromFile = renderForDelivery(record({ channel: "never-registered", output: undefined }), fileCtx);
+	check("fallback reads the file when the record has no output", fromFile.includes("CONTENT THAT ONLY EXISTS IN THE FILE"), fromFile);
+	check("and does not claim there was no output", !fromFile.includes("(no output)"), fromFile);
+}
+
 console.log("\nC11: renderer-written stats must survive to disk (P2)");
 {
 	// The defect: `engine.finish` writes the record to disk BEFORE the delivery
@@ -343,7 +383,9 @@ console.log("\nC12: a non-generic channel survives the engine end to end");
 		channel: "custom",
 		timeoutSeconds: 30,
 	});
-	check("record carries the channel name", handle.record.channel === "custom", handle.record.channel);
+	// Read it back by id: `JobHandle` deliberately carries no live `record`, so a consumer
+	// cannot rewrite the engine's own state through it.
+	check("record carries the channel name", store2.read(handle.id)?.channel === "custom", String(store2.read(handle.id)?.channel));
 
 	// Wait for it to settle, then render through the registry the way delivery does.
 	await new Promise((r) => setTimeout(r, 1500));

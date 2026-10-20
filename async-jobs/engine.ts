@@ -401,7 +401,7 @@ export class JobEngine {
 			this.queue.push({ id, opts: options });
 		}
 
-		return { id, name: record.name, record };
+		return { id, name: record.name };
 	}
 
 	private launch(id: string, live: LiveJob, options: StartProcessOptions): void {
@@ -525,6 +525,10 @@ export class JobEngine {
 		child.on("close", (code, signal) => {
 			// Flush anything the decoders were holding mid-character.
 			this.flushDecoders(live);
+			// `killRequested` means the engine asked it to stop. That is not the same as the
+			// user asking: the kill limit fires through the same flag, and a timed-out job is
+			// exactly the case the caller must hear about. Only `kill()` - the user's own
+			// request - sets `killedByUser`, and that is the one that suppresses delivery.
 			const wasKilled = live.killRequested;
 			const state: JobState = wasKilled ? "killed" : code === 0 ? "done" : "failed";
 			this.finish(live, state, {
@@ -536,7 +540,6 @@ export class JobEngine {
 					: code === 0
 						? undefined
 						: `exited with code ${String(code)}`,
-				killedByUser: wasKilled,
 			});
 		});
 	}

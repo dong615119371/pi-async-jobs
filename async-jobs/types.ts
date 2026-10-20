@@ -107,6 +107,17 @@ export interface StartProcessOptions {
 	/**
 	 * Called once when this job settles, in place of the engine's global notifiers.
 	 * Lets the caller deliver the result its own way (for example as a steering message).
+	 *
+	 * This *replaces* the framework's delivery, it does not supplement it. Three things
+	 * follow from that and none of them are obvious:
+	 *
+	 *   - the channel renderer never runs, so a renderer that writes `record.stats`
+	 *     (a session id, a tool-call count) never gets the chance;
+	 *   - nothing reaches the model unless this callback puts it there;
+	 *   - `renderAndPersist` is not called, so `stats` is not written back to disk.
+	 *
+	 * Pass `channel` alone if you want the framework to render and deliver. Pass this
+	 * only when you are doing both yourself.
 	 */
 	onSettle?: (record: JobRecord) => void;
 }
@@ -127,7 +138,16 @@ export type ShellResolver = (explicit?: string) => ShellSpec;
 export interface JobHandle {
 	id: string;
 	name: string;
-	record: JobRecord;
+	/**
+	 * Deliberately no `record` here.
+	 *
+	 * The record is the live object the engine mutates and the delivery path reads -
+	 * `channel` decides which renderer renders it, `killedByUser` suppresses the notice,
+	 * and `isBackgroundJob: false` makes the engine delete the file on completion. A
+	 * caller holding that reference could change all three, which is exactly the kind of
+	 * reach a narrow service surface exists to prevent. Read it back with
+	 * `engine.get(id)` when you need a snapshot.
+	 */
 }
 
 /** What the engine needs from Pi to deliver a completion. */

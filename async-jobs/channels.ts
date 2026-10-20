@@ -22,6 +22,15 @@ import type { ChannelRenderer, JobRecord, ChannelRenderContext } from "./types.t
 const registry = new Map<string, ChannelRenderer>();
 
 /**
+ * How much of the output file the fallback will read when `record.output` is empty.
+ *
+ * Larger than a digest, smaller than the file: this is a last-resort view for a job the
+ * framework cannot render properly, so it should show enough to be useful without
+ * pushing tens of kilobytes into the model's context.
+ */
+const TAIL_FOR_FALLBACK = 4000;
+
+/**
  * Register a channel's renderer.
  *
  * Re-registering the same name replaces the previous entry: an extension reload should
@@ -58,15 +67,25 @@ export function renderForDelivery(record: JobRecord, ctx: ChannelRenderContext):
 	const renderer = registry.get(record.channel);
 	if (renderer) {
 		try {
-			// An empty render is as much a loss as a thrown one: the delivery batch would carry
-			// a blank result and look identical to a job that said nothing. Fall back instead.
 			const out = renderer.render(record, ctx);
-			return out || fallbackRender(record);
+			// Whitespace counts as empty here. A renderer that returns "   " produces a
+			// delivery that looks like the job said nothing, which is the same loss as an
+			// empty string and the case the fallback exists for.
+			if (out.trim().length > 0) return out;
 		} catch {
 			/* fall through to the plain form rather than lose the result */
 		}
 	}
-	return fallbackRender(record);
+	// Outside the try on purpose. A renderer may have left `record.output` in a shape
+	// `fallbackRender` cannot read (it is the live record, and a renderer can write to
+	// it), so the fallback needs its own guard - otherwise it throws, the exception
+	// escapes this function, and the caller's catch swallows the result entirely. That
+	// is the one outcome this whole path exists to prevent.
+	try {
+		return fallbackRender(record, ctx);
+	} catch {
+		return `[Job ${String(record?.id ?? "?")} ${String(record?.state ?? "?")}]\n(renderer and fallback both failed)`;
+	}
 }
 
 /**
@@ -111,10 +130,29 @@ export function digestFor(record: JobRecord): string {
  *
  * Deliberately dumb: state, exit code, output. No channel-specific decoration, because
  * this is exactly the path taken when nobody knows how to decorate.
+ *
+ * `record.output` is the in-memory tail, capped at `TAIL_BYTES` (16 KB) and absent
+ * entirely for a record read back from disk after `recover()`. When it has nothing,
+ * read the output file instead - a job that produced 40 KB of real output should not
+ * present as "(no output)" just because the fallback is the one rendering it.
  */
-function fallbackRender(record: JobRecord): string {
-	const head = `[Job ${record.id} ${record.state}]`;
-	const body = record.output?.trim() || record.error || "(no output)";
+function fallbackRender(record: JobRecord, ctx?: ChannelRenderContext): string {
+	const head = `[Job ${String(record?.id ?? "?")} ${String(record?.state ?? "?")}]`;
+	let body = "";
+	try {
+		body = typeof record?.output === "string" ? record.output.trim() : "";
+	} catch {
+		body = "";
+	}
+	if (body.length === 0 && ctx && typeof record?.id === "string") {
+		try {
+			const tail = ctx.tailOutput(record.id, TAIL_FOR_FALLBACK);
+			body = tail.text.trim();
+		} catch {
+			body = "";
+		}
+	}
+	if (body.length === 0) body = record?.error ?? "(no output)";
 	return `${head}\n${body}`;
 }
 

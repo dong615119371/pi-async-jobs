@@ -16,8 +16,9 @@
  * hands to every extension. Same instance, same process, no serialisation, so a
  * function reference survives the trip.
  *
- * The surface is deliberately narrow: `startProcess` and `registerChannel`. A caller
- * that needs something else should ask for it by name rather than receive the engine.
+ * The surface is deliberately narrow - `startProcess`, `registerChannel`, the API
+ * version, and two read-only counters. A caller that needs something else should ask
+ * for it by name rather than receive the engine.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";

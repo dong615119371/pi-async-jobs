@@ -88,7 +88,22 @@ export interface EventsApi {
  * Also re-asks when the host announces it is ready, which covers the reload case where
  * the consumer outlives the host.
  */
-export function connectToHost(pi: EventsApi): { service: () => HostService | null; versionMismatch: () => boolean } {
+/**
+ * What the consumer knows about the host, at three levels of certainty.
+ *
+ * `absent` and `connected` are different questions and used to share one answer: asking
+ * `versionMismatch()` before the first reply returned `false`, exactly what a compatible
+ * host returns. A consumer that branched on it could not tell "there is no host" from
+ * "the host agrees with me".
+ */
+export type HostStatus = "connecting" | "compatible" | "incompatible";
+
+export function connectToHost(pi: EventsApi): {
+	service: () => HostService | null;
+	versionMismatch: () => boolean;
+	/** Three-way answer where `versionMismatch()` is two-way. */
+	status: () => HostStatus;
+} {
 	let current: HostService | null = null;
 	let mismatch = false;
 	const replyChannel = `async-jobs:service-reply:${Math.random().toString(36).slice(2)}`;
@@ -106,5 +121,9 @@ export function connectToHost(pi: EventsApi): { service: () => HostService | nul
 	pi.events.on(HOST_READY_CHANNEL, ask);
 	pi.on("session_start", ask);
 
-	return { service: () => current, versionMismatch: () => mismatch };
+	return {
+		service: () => current,
+		versionMismatch: () => mismatch,
+		status: () => (current === null ? "connecting" : mismatch ? "incompatible" : "compatible"),
+	};
 }

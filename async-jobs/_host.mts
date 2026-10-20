@@ -257,6 +257,19 @@ async function main(): Promise<void> {
 		pi.startSession();
 		check("matching version is not flagged", link.versionMismatch() === false);
 		check("ready channel name is stable", HOST_READY_CHANNEL === "async-jobs:host-ready");
+
+		// `versionMismatch()` is two-way and its `false` is ambiguous: a consumer that has
+		// never heard from the host and one that heard a compatible host both see `false`.
+		// `status()` is the three-way answer. Before any reply it must not say
+		// "compatible", or a consumer cannot distinguish "no host" from "host agrees".
+		check("status is compatible after a good reply", link.status() === "compatible", link.status());
+		const silentPi = fakePi();
+		const silentLink = connectToHost(silentPi as never);
+		silentPi.startSession();
+		check("status is connecting when no host answers", silentLink.status() === "connecting", silentLink.status());
+		// And `versionMismatch()` on that same silent link is `false` - the very ambiguity
+		// `status()` exists to resolve.
+		check("versionMismatch alone cannot express 'no host'", silentLink.versionMismatch() === false);
 		await fsp.promises.rm(store.dir(), { recursive: true, force: true });
 	}
 

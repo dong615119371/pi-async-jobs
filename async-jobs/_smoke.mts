@@ -175,6 +175,37 @@ async function main(): Promise<void> {
 	check("queued job killed", engine.get(queuedJob.id)?.state === "killed", String(engine.get(queuedJob.id)?.state));
 	await waitFor(() => blockers.every((h) => engine.get(h.id)?.state !== "running"), 30000, "T6 blockers");
 
+	// ------------------------------------------------------- T6b timeout notifies
+	console.log("\nT6b: a timed-out job still notifies, a user kill does not");
+	// `killRequested` says the engine asked it to stop. The kill limit uses the same flag,
+	// so treating it as "the user killed this" dropped every timed-out job's result on the
+	// floor: `onFinished` returned early and the model never learned the job had ended.
+	// Only `kill()` marks `killedByUser`.
+	{
+		const seen: Array<{ id: string; suppressed: boolean; state?: string }> = [];
+		const stopWatching = () => {};
+		const watcher = (r: any) => seen.push({ id: r.id, suppressed: !!r.killedByUser, state: r.state });
+		engine.onFinished(watcher);
+
+		const timed = engine.startProcess({ command: "sleep 30", name: "will-timeout", timeoutSeconds: 1 });
+		const userKilled = engine.startProcess({ command: "sleep 30", name: "will-be-killed", timeoutSeconds: 120 });
+		void engine.kill(userKilled.id, "test kill");
+
+		await waitFor(
+			() =>
+				seen.some((e) => e.id === timed.id) && seen.some((e) => e.id === userKilled.id),
+			40000,
+			"T6b both settled",
+		);
+
+		const timedEntry = seen.find((e) => e.id === timed.id);
+		const killedEntry = seen.find((e) => e.id === userKilled.id);
+		check("timed-out job is delivered", timedEntry !== undefined && !timedEntry.suppressed, JSON.stringify(timedEntry));
+		check("timed-out job records the reason", engine.get(timed.id)?.timedOut === true);
+		check("user-killed job is suppressed", killedEntry !== undefined && killedEntry.suppressed, JSON.stringify(killedEntry));
+		stopWatching();
+	}
+
 	// ------------------------------------------------------------- T7 logs tail
 	console.log("\nT7: job_logs tail");
 	const big = engine.startProcess({ command: "for i in $(seq 1 500); do echo LINE_$i; done", name: "big", timeoutSeconds: 30 });
