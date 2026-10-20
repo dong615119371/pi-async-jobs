@@ -14,6 +14,31 @@
 
 到了后台命令完成时，将会把运行结果返还给模型，再次唤醒了模型，使其可以针对结果做工作。
 
+```
+bash(command)
+   │
+   ├─ 异步模式关闭 ──→ Pi 自带 bash（同步，行为不变）
+   │
+   └─ 异步模式开启
+        │
+        ├─ 宽限期内结束 ──→ 结果内联返回，本回合结束
+        │
+        └─ 超过宽限期 ──→ 落盘 + 返回作业号，本回合结束
+                            │
+                    进程继续在后台跑
+                            │
+                ┌─────────┴─────────┐
+            正常结束 / 失败        job_kill
+                │                      │
+           3 秒合并窗口          杀整棵进程树
+                │                 + 确认退出
+                ↓                      ↓
+        唤醒模型（新回合）        标记 killed
+                                    不通知
+```
+
+宽限期默认 20 秒。`mode: "background"` 或 `expectSeconds ≥ 120` 时跳过等待，直接走右下那条。
+
 ## 核心特性
 
 | 特性                 | 说明                                                                      |
@@ -34,10 +59,10 @@
 **推荐从 git 安装**，可以锁定版本：
 
 ```bash
-pi install git:github.com/dong615119371/pi-async-jobs@v0.1.1
+pi install git:github.com/dong615119371/pi-async-jobs@v0.1.2
 ```
 
-不带 `@v0.1.1` 会装最新的 `main`，适合想跟开发进度的情况。
+不带 `@v0.1.2` 会装最新的 `main`，适合想跟开发进度的情况。
 
 也可以直接用目录：把 `async-jobs/` 整个拷进 Pi 的 extensions 目录（位置随安装方式不同，见 Pi 官方文档）。
 
@@ -61,7 +86,25 @@ pi install git:github.com/dong615119371/pi-async-jobs@v0.1.1
 /async off    # 关闭（已跑的作业不受影响）
 ```
 
-开启后，模型调用 `bash` 时可以带两个参数：
+先说一个实际用例。你让模型跑一遍测试：
+
+```text
+你：跑一下测试
+模型：bash(command: "pytest -q", expectSeconds: 45)
+       ↓ 45 秒还没结束，自动转后台
+       "作业 aj-3f9c1d2e 已在后台运行，结果会自己送回来。"
+
+你：那先把 README 里的安装章节改成 npm
+模型：（接着改 README，无需等测试）
+
+       ⋮ 约一分钟后
+
+模型：（收到作业结果）测试跑完了：3 failed, 47 passed。
+```
+
+关键点：模型没有在等，你也没有。那个回合结束了，作业结果在新的一回合里回来。
+
+参数怎么给：
 
 ```text
 bash(command: "git status")
@@ -71,7 +114,7 @@ bash(command: "npm run build", mode: "background")
   → 直接转后台，不等
 
 bash(command: "pytest -q", expectSeconds: 45)
-  → 估 45 秒：小于 120 秒就按估计等，达到 120 秒直接转后台
+  → 估 45 秒，到了还没完就转后台
 ```
 
 结果会自己送回来，无需轮询。需要主动查看时用工具：
@@ -222,7 +265,24 @@ node async-jobs/_timeout.mts
 node async-jobs/_stress.mts
 ```
 
-需要 Node 能直接运行 TypeScript（类型剥离）。全部通过时进程退出码为 0。
+需要 Node 能直接运行 TypeScript（类型剥离）。
+
+每个文件逐条打印 `PASS`，结尾一行汇总：
+
+```text
+====================================================
+PASS 34   FAIL 0
+```
+
+全部通过时进程退出码为 0，任意一条失败则为 1。总共 **401 条断言**，分在 10 个文件里；跑完 _smoke 和 _stress 需要几分钟（它们在真实地 spawn 进程）。
+
+## 参与
+
+欢迎 Issue 和 PR。
+
+- 改动较大时先开个 Issue 说明，避免做完发现方向不对。
+- 提交前请让 `async-jobs/_*.mts` 全部通过（跑法见上一节）。
+- 修 bug 的 PR 请附复现方式——没有复现路径的修复，我很难判断它是否真的修好了。
 
 ## License
 
