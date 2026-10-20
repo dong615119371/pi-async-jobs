@@ -59,10 +59,10 @@ bash(command)
 **推荐从 git 安装**，可以锁定版本：
 
 ```bash
-pi install git:github.com/dong615119371/pi-async-jobs@v0.1.3
+pi install git:github.com/dong615119371/pi-async-jobs@v0.2.0
 ```
 
-不带 `@v0.1.3` 会装最新的 `main`，适合想跟开发进度的情况。
+不带 `@v0.2.0` 会装最新的 `main`，适合想跟开发进度的情况。
 
 也可以直接用目录：把 `async-jobs/` 整个拷进 Pi 的 extensions 目录（位置随安装方式不同，见 Pi 官方文档）。
 
@@ -179,6 +179,27 @@ job_history                  # 翻历史作业（跨会话）
 
 **为什么 kill 要等进程真死。** `child.kill()` 只信号直接子进程，它派生的孙子进程会活着。所以先杀整棵树（Windows 上 `taskkill /T`，再 `/F` 兜底），再用存活探测确认进程真没了才返回——「发了信号」和「已经没了」是两回事。
 
+## 给其他扩展用
+
+本包可以把作业能力借给别的扩展，让它成为一个渠道而不是一套重复的调度。
+
+服务走 `pi.events`，**不是 import**。Pi 给每个扩展独立的 jiti 实例（`moduleCache: false`），import 到的是第二份模块、第二张渠道注册表，而引擎读的是第一张。失效是静默的——作业照样送达，只是渲染退化成兜底格式。
+
+`consumer.ts` 是接入模板，复制到你的扩展里即可。服务面只有四项：
+
+| 能力 | 作用 |
+| --- | --- |
+| `startProcess(options)` | 启动一个后台作业，拿回句柄 |
+| `registerChannel(renderer)` | 为你的渠道注册渲染器 |
+| `activeCount()` | 当前占用槽位的作业数 |
+| `queuedCount()` | 排队中的作业数 |
+
+故意不交出去 `engine` 实例——那等于把 `shutdownAll` 也一起给了。
+
+**加载顺序无关**，两边都会在 `session_start` 再握一次手，宿主还会广播 `async-jobs:host-ready`。版本不符时消费者拒绝激活，而不是等到某次调用才在工具内部抛错。
+
+现成的例子：[`pi-delegate`](https://github.com/dong615119371/pi-delegate)。
+
 ## 输出编码
 
 子进程吐的是裸字节，没有标签说它是什么编码。解码错了就是乱码，而乱码容易被当成别的问题去查。
@@ -251,7 +272,7 @@ UTF-8 的半截长度能精确算：首字节自己声明序列长度（`110xxxx
 
 ## 跑测试
 
-共 10 个测试文件（`async-jobs/_*.mts`），逐个用 `node` 跑：
+共 11 个测试文件（`async-jobs/_*.mts`），逐个用 `node` 跑：
 
 ```bash
 node async-jobs/_smoke.mts
@@ -260,6 +281,7 @@ node async-jobs/_gracepolicy.mts
 node async-jobs/_batch.mts
 node async-jobs/_channels.mts
 node async-jobs/_encoding.mts
+node async-jobs/_host.mts
 node async-jobs/_journal.mts
 node async-jobs/_status.mts
 node async-jobs/_timeout.mts
@@ -275,7 +297,7 @@ node async-jobs/_stress.mts
 PASS 34   FAIL 0
 ```
 
-全部通过时进程退出码为 0，任意一条失败则为 1。总共 **401 条断言**，分在 10 个文件里；跑完 _smoke 和 _stress 需要几分钟（它们在真实地 spawn 进程）。
+全部通过时进程退出码为 0，任意一条失败则为 1。总共 **436 条断言**，分在 11 个文件里；跑完 _smoke 和 _stress 需要几分钟（它们在真实地 spawn 进程）。
 
 ## 参与
 
