@@ -24,13 +24,15 @@
 | --- | --- |
 | **`pi-async-jobs`**（本仓） | 调度核心：进程、持久化、并发、通知、渠道注册表 |
 | [`pi-delegate`](https://github.com/dong615119371/pi-delegate) | 第一个接入者：把活外包给 OpenCode CLI。自带同步与异步两把工具 |
+| [`pi-crew`](https://github.com/dong615119371/pi-crew) | 船员派遣：把活派给无头 pi 子代理（角色档案 `~/.pi/agent/agents/*.md`，同一套模型/技能/配置），结果作为消息自动送回 |
 
-两个包**可以单独装，也可以一起装**：
+这些包**可以单独装，也可以一起装**：
 
 - 只装本包 → 有后台作业，没有外包
-- 两个都装 → 后台作业 + 同步外包 + 异步外包（`delegate_async` 自动激活）
+- 加装 [`pi-delegate`](https://github.com/dong615119371/pi-delegate) → 后台作业 + 同步/异步外包（`delegate_async` 自动激活）
+- 加装 [`pi-crew`](https://github.com/dong615119371/pi-crew) → 后台作业 + 船员派遣（`crew_async` 自动激活）
 
-想写第三个接入者？看 [给其他扩展用](#给其他扩展用)。
+想写下一个接入者？看 [给其他扩展用](#给其他扩展用)。
 
 ## 怎么工作的
 
@@ -224,7 +226,7 @@ job_history                  # 翻历史作业（跨会话）
 
 **加载顺序无关**，两边都会在 `session_start` 再握一次手，宿主还会广播 `async-jobs:host-ready`。版本不符时消费者拒绝激活，而不是等到某次调用才在工具内部抛错。
 
-现成的例子：[`pi-delegate`](https://github.com/dong615119371/pi-delegate) —— 它是这个服务面唯一的真实使用者，也是判断这套接口是否好用的依据。它注册了 `opencode` 渠道，投递 `kind: "delegate"` 的作业。
+现成的例子有两个：[`pi-delegate`](https://github.com/dong615119371/pi-delegate) 注册 `opencode` 渠道、投递 `kind: "delegate"` 的作业；[`pi-crew`](https://github.com/dong615119371/pi-crew) 注册 `crew` 渠道、投递 `kind: "crew"` 的作业。它们是这个服务面仅有的真实使用者，也是判断这套接口是否好用的依据。
 
 它证明了这套设计能跑通：两个包**各自独立的 git 仓库、独立的版本号、独立的发布节奏**，靠 `pi.events` 在运行时握手，没有任何编译期依赖。
 
