@@ -214,7 +214,7 @@ export default function (pi: ExtensionAPI) {
 		};
 		try {
 			watcher = fs.watch(BOX_DIR, (_event, filename) => {
-				if (filename && filename !== boxName) return;
+				if (filename && filename.toLowerCase() !== boxName.toLowerCase()) return;
 				drainBox();
 			});
 			watcher.on("error", () => {
