@@ -1,74 +1,34 @@
 /**
- * Session mailbox bridge (PI 侧收件桥).
+ * Session IPC bridge (PI 侧原生命名管道接收桥).
  *
- * Lets any writer — the `session-mcp` MCP server, another session, a human with
- * `echo` — drop a message into a LIVE pi session from the outside, delivered as a
- * queued follow-up (the Ctrl+Q semantic: never interrupts a running turn).
+ * Implements pure process-to-process IPC via Node.js native named pipes
+ * (\\.\pipe\pi-session-<id> on Windows, /tmp/pi-session-<id>.sock on POSIX).
  *
- * Layout under ~/.pi/agent/mailbox/:
- *   registry/<session-id>.json   one file per live session: {id, name, cwd, pid, ts}
- *                                ts is a 30s heartbeat; a stale ts means the session
- *                                is gone even if shutdown cleanup never ran.
- *   box/<session-id>.jsonl       inbox. One JSON envelope per line:
- *                                {id, from, to, type: "msg"|"ask", body, ts}
- *                                Written by senders with appendFile. Kept after
- *                                delivery, so a session that is offline still receives
- *                                everything queued while it was away (drain on start).
- *   feeds/<session-id>.jsonl     outbox. One line per finished agent run:
- *                                {ts, text, answering: [ask-ids]}
- *                                `answering` links a run's final output to the ask
- *                                envelopes it absorbed, which is what `ask_session`
- *                                on the sender side waits for.
- *
- * Delivery uses pi.sendMessage(..., { deliverAs: "followUp", triggerTurn: true }):
- * "followUp" waits until the agent has no more tool calls — pi's own queue-a-follow-up
- * mechanism — and triggerTurn wakes an idle session. Same batching/storm concerns as
- * job-result delivery do not apply here: envelopes arrive one at a time from a human or
- * an agent on the other end, not from a fan-out of background jobs.
- *
- * This file is a second extension entry of the async-jobs package. It deliberately does
- * not touch the job engine: the mailbox is independent of async mode, and keeping it in
- * its own module graph means a mailbox failure can never take the job host down.
+ * Zero shared disk mailbox, zero fs.watch, zero cursor tracking.
+ * - Sockets carry messages directly into memory;
+ * - ask_session holds the socket open; on agent_end the response is written
+ *   directly back through the socket (Connection IS Context).
+ * - Live presence is tracked via lightweight zero-content probe files in
+ *   ~/.pi/agent/sessions-live/<safeId>.json with PID liveness check.
  */
 
 import * as fs from "node:fs";
+import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-const MAILBOX_ROOT = path.join(os.homedir(), ".pi", "agent", "mailbox");
-const BOX_DIR = path.join(MAILBOX_ROOT, "box");
-const FEED_DIR = path.join(MAILBOX_ROOT, "feeds");
-const REG_DIR = path.join(MAILBOX_ROOT, "registry");
-const HEARTBEAT_MS = 30_000;
-const FEED_MAX_BYTES = 1_000_000;
-
-interface Envelope {
-	id: string;
-	from: string;
-	to: string;
-	type: "msg" | "ask";
-	body: string;
-	ts: number;
+export function getSessionPipePath(sessionId: string): string {
+	const safeId = sessionId.replace(/[^\w.-]+/g, "_");
+	return process.platform === "win32"
+		? `\\\\.\\pipe\\pi-session-${safeId}`
+		: path.join(os.tmpdir(), `pi-session-${safeId}.sock`);
 }
 
-/**
- * File-name safety for session ids (audit finding: a forged id like `..\..\x`
- * escaped the mailbox directory). One shared rule on both sender and bridge side:
- * anything outside [\w.-] collapses to `_`, so every mailbox path stays inside its
- * directory. The raw id is kept in file CONTENT (envelope/registry), never in paths.
- */
-export function fileSafe(id: string): string {
-	return id.replace(/[^\w.-]+/g, "_");
+export function getLiveDir(): string {
+	return path.join(os.homedir(), ".pi", "agent", "sessions-live");
 }
 
-function ensureDirs(): void {
-	for (const dir of [MAILBOX_ROOT, BOX_DIR, FEED_DIR, REG_DIR]) {
-		fs.mkdirSync(dir, { recursive: true });
-	}
-}
-
-/** Last assistant text of a run, or "" — tolerant of message shape drift. */
 function lastAssistantText(messages: unknown): string {
 	if (!Array.isArray(messages)) return "";
 	for (let i = messages.length - 1; i >= 0; i--) {
@@ -87,207 +47,155 @@ function lastAssistantText(messages: unknown): string {
 	return "";
 }
 
-/** Keep the feed bounded: drop everything but the last 100 lines past 1 MB. */
-function trimFeed(feedFile: string): void {
-	try {
-		if (fs.statSync(feedFile).size < FEED_MAX_BYTES) return;
-		const lines = fs.readFileSync(feedFile, "utf8").split(/\r?\n/).filter(Boolean);
-		fs.writeFileSync(feedFile, lines.slice(-100).join("\n") + "\n");
-	} catch {
-		/* feed is disposable telemetry; a trim failure is not worth an error */
-	}
-}
-
 export default function (pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx) => {
 		const id = ctx.sessionManager.getSessionId();
 		const name = ctx.sessionManager.getSessionName() || id;
 		const cwd = ctx.sessionManager.getCwd();
+		const safeId = id.replace(/[^\w.-]+/g, "_");
+		const pipePath = getSessionPipePath(id);
 
-		try {
-			ensureDirs();
-		} catch {
-			return; // no writable home: the bridge stays silent rather than erroring every turn
+		const liveDir = getLiveDir();
+		const liveCard = path.join(liveDir, `${safeId}.json`);
+
+		// Clean up any stale POSIX socket file before listening
+		if (process.platform !== "win32") {
+			try {
+				fs.unlinkSync(pipePath);
+			} catch {}
 		}
 
-		const boxName = `${fileSafe(id)}.jsonl`;
-		const boxFile = path.join(BOX_DIR, boxName);
-		const offsetFile = path.join(BOX_DIR, `${fileSafe(id)}.offset`);
-		const feedFile = path.join(FEED_DIR, boxName);
-		const regFile = path.join(REG_DIR, `${fileSafe(id)}.json`);
+		// Keep open sockets for callers waiting on ask_session results
+		const pendingAskSockets: net.Socket[] = [];
 
-		// The inbox must exist before fs.watch: watching a missing file throws.
+		const server = net.createServer((socket) => {
+			let buffer = "";
+			socket.setEncoding("utf8");
+
+			socket.on("data", (chunk: string) => {
+				buffer += chunk;
+				const lines = buffer.split("\n");
+				buffer = lines.pop() ?? "";
+				for (const line of lines) {
+					const trimmed = line.trim();
+					if (!trimmed) continue;
+					try {
+						const envelope = JSON.parse(trimmed) as {
+							type: "msg" | "ask" | "read";
+							from?: string;
+							message?: string;
+							count?: number;
+						};
+
+						if (envelope.type === "read") {
+							// In-memory read request: return last few assistant texts or entries
+							const entries = ctx.sessionManager.getEntries();
+							const msgs: string[] = [];
+							for (let i = entries.length - 1; i >= 0 && msgs.length < (envelope.count || 5); i--) {
+								const e = entries[i] as any;
+								if (e?.type === "message" && e?.message?.content) {
+									const role = e.message.role || "unknown";
+									const text =
+										typeof e.message.content === "string"
+											? e.message.content
+											: Array.isArray(e.message.content)
+												? e.message.content.map((b: any) => b.text || "").join("")
+												: "";
+									if (text.trim()) msgs.unshift(`[${role}]\n${text.trim()}`);
+								}
+							}
+							socket.write(JSON.stringify({ ok: true, messages: msgs }) + "\n");
+							socket.end();
+							continue;
+						}
+
+						const isAsk = envelope.type === "ask";
+						const sender = envelope.from || "peer-agent";
+						const body = envelope.message || "";
+
+						pi.sendMessage(
+							{
+								customType: "session-relay",
+								content:
+									(isAsk
+										? `[会话提问 · 来自 ${sender}，对方在等你的答复]\n`
+										: `[会话消息 · 来自 ${sender}]\n`) + body,
+								display: true,
+								details: { from: sender, type: envelope.type },
+							},
+							{ deliverAs: "followUp", triggerTurn: true },
+						);
+
+						if (isAsk) {
+							// Connection IS Context: hold socket open until agent_end
+							pendingAskSockets.push(socket);
+						} else {
+							socket.write(JSON.stringify({ ok: true }) + "\n");
+							socket.end();
+						}
+					} catch (err) {
+						socket.write(JSON.stringify({ ok: false, error: String(err) }) + "\n");
+						socket.end();
+					}
+				}
+			});
+
+			socket.on("error", () => {
+				const idx = pendingAskSockets.indexOf(socket);
+				if (idx >= 0) pendingAskSockets.splice(idx, 1);
+			});
+
+			socket.on("close", () => {
+				const idx = pendingAskSockets.indexOf(socket);
+				if (idx >= 0) pendingAskSockets.splice(idx, 1);
+			});
+		});
+
 		try {
-			if (!fs.existsSync(boxFile)) fs.writeFileSync(boxFile, "");
+			server.listen(pipePath, () => {
+				// Publish live presence card
+				try {
+					fs.mkdirSync(liveDir, { recursive: true });
+					fs.writeFileSync(liveCard, JSON.stringify({ id, name, cwd, pid: process.pid, pipe: pipePath }));
+				} catch {}
+			});
 		} catch {
+			// Failed to bind pipe; stay quiet
 			return;
 		}
 
-		// Registry entry doubles as liveness proof for senders.
-		const heartbeat = () => {
-			try {
-				fs.writeFileSync(
-					regFile,
-					JSON.stringify({ id, name, cwd, pid: process.pid, ts: Date.now() }),
-				);
-			} catch {
-				/* senders treat a missing/stale entry as "session offline" and queue anyway */
-			}
-		};
-		heartbeat();
-		const heartbeatTimer = setInterval(heartbeat, HEARTBEAT_MS);
-		heartbeatTimer.unref?.();
-
-		// Asks absorbed into a run are answered by that run's final output; the feed
-		// entry carries their ids so the waiting ask_session can find its answer.
-		const pendingAsks: string[] = [];
-
-		let readOffset = 0;
-		try {
-			if (fs.existsSync(offsetFile)) {
-				readOffset = Math.max(0, Number(fs.readFileSync(offsetFile, "utf8")) || 0);
-			}
-		} catch {
-			readOffset = 0;
-		}
-		const drainBox = () => {
-			let chunk: string;
-			try {
-				let size = 0;
-				try {
-					size = fs.statSync(boxFile).size;
-				} catch {
-					return;
-				}
-				if (size < readOffset) readOffset = 0; // someone truncated the inbox
-				if (size <= readOffset) return;
-
-				const diff = size - readOffset;
-				const buf = Buffer.allocUnsafe(diff);
-				const fd = fs.openSync(boxFile, "r");
-				let bytesRead = 0;
-				try {
-					bytesRead = fs.readSync(fd, buf, 0, diff, readOffset);
-				} finally {
-					try { fs.closeSync(fd); } catch {}
-				}
-				if (bytesRead <= 0) return;
-
-				// Boundary safety: only consume up to the last complete newline byte (0x0a).
-				// If a concurrent writer wrote a half-line, wait until the newline arrives
-				// rather than skipping an unparseable fragment and losing it forever.
-				const lastNl = buf.lastIndexOf(0x0a, bytesRead - 1);
-				if (lastNl < 0) return;
-				chunk = buf.subarray(0, lastNl + 1).toString("utf8");
-				readOffset += lastNl + 1;
-				try {
-					fs.writeFileSync(offsetFile, String(readOffset));
-				} catch {
-					/* offset persistence failure falls back to memory offset */
-				}
-			} catch {
-				return;
-			}
-			for (const line of chunk.split(/\r?\n/)) {
-				if (!line.trim()) continue;
-				let envelope: Envelope;
-				try {
-					envelope = JSON.parse(line) as Envelope;
-				} catch {
-					continue; // one bad line must not block the rest of the queue
-				}
-				if (typeof envelope?.body !== "string") continue;
-				const isAsk = envelope.type === "ask";
-				try {
-					pi.sendMessage(
-						{
-							customType: "session-relay",
-							content:
-								(isAsk
-									? `[会话提问 · 来自 ${envelope.from ?? "peer"}，对方在等你的答复]\n`
-									: `[会话消息 · 来自 ${envelope.from ?? "peer"}]\n`) + envelope.body,
-							display: true,
-							details: { envelopeId: envelope.id, from: envelope.from, type: envelope.type },
-						},
-						{ deliverAs: "followUp", triggerTurn: true },
-					);
-				} catch {
-					continue;
-				}
-				if (isAsk && envelope.id) pendingAsks.push(envelope.id);
-			}
-		};
-
-		// Directory-level watch survives inbox recreation on both platforms, and the
-		// per-name filter keeps sibling sessions' traffic out of this one's handler.
-		// If fs.watch is unavailable or dies later, degrade to a coarse poll instead of
-		// never delivering again (audit A finding).
-		let watcher: fs.FSWatcher | null = null;
-		let watchFallback: ReturnType<typeof setInterval> | null = null;
-		const startWatchFallback = () => {
-			if (watchFallback !== null) return;
-			watchFallback = setInterval(drainBox, 5_000);
-			watchFallback.unref?.();
-		};
-		try {
-			watcher = fs.watch(BOX_DIR, (_event, filename) => {
-				if (filename && filename.toLowerCase() !== boxName.toLowerCase()) return;
-				drainBox();
-			});
-			watcher.on("error", () => {
-				try {
-					watcher?.close();
-				} catch {
-					/* already closed */
-				}
-				watcher = null;
-				startWatchFallback();
-			});
-		} catch {
-			watcher = null;
-			startWatchFallback();
-		}
-		// Messages queued while this session was offline are delivered on startup.
-		drainBox();
-
 		pi.on("agent_end", (event) => {
-			try {
-				// Pi drains all queued followUp messages into the same agent turn when idle.
-				// Therefore, the turn's final output addresses all asks accumulated in that run.
-				// Taking only one leaves subsequent asks orphaned with no turn to ever answer them.
-				const answering = pendingAsks.splice(0);
-				fs.appendFileSync(
-					feedFile,
-					JSON.stringify({
-						ts: Date.now(),
-						text: lastAssistantText(event.messages),
-						answering,
-					}) + "\n",
-				);
-				trimFeed(feedFile);
-			} catch {
-				/* the asker will time out with a clear error; nothing to recover here */
+			if (pendingAskSockets.length === 0) return;
+			const answer = lastAssistantText(event.messages);
+			// Deliver conclusion directly through the awaiting long-lived sockets
+			while (pendingAskSockets.length > 0) {
+				const sock = pendingAskSockets.shift();
+				if (sock && !sock.destroyed) {
+					try {
+						sock.write(JSON.stringify({ ok: true, text: answer || "(the target answered with no text)" }) + "\n");
+						sock.end();
+					} catch {}
+				}
 			}
 		});
 
 		pi.on("session_shutdown", () => {
-			clearInterval(heartbeatTimer);
-			if (watchFallback !== null) clearInterval(watchFallback);
 			try {
-				watcher?.close();
-			} catch {
-				/* already closed */
+				server.close();
+			} catch {}
+			if (process.platform !== "win32") {
+				try {
+					fs.unlinkSync(pipePath);
+				} catch {}
 			}
-			// Keep the entry instead of deleting it (audit A finding H1): senders need the
-			// address to queue mail for the next start. Mark it stopped so liveness reads
-			// stale while the address stays resolvable.
 			try {
-				fs.writeFileSync(
-					regFile,
-					JSON.stringify({ id, name, cwd, pid: process.pid, ts: Date.now(), stopped: true }),
-				);
-			} catch {
-				/* the old heartbeat timestamp already reads as stale */
+				fs.unlinkSync(liveCard);
+			} catch {}
+			while (pendingAskSockets.length > 0) {
+				const sock = pendingAskSockets.shift();
+				try {
+					sock?.destroy();
+				} catch {}
 			}
 		});
 	});
