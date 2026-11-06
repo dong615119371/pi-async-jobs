@@ -56,7 +56,17 @@ export class JobStore {
 			const target = this.fileFor(record.id);
 			const tmp = `${target}.tmp`;
 			fs.writeFileSync(tmp, JSON.stringify(record), { encoding: "utf8", mode: 0o600 });
-			fs.renameSync(tmp, target);
+			try {
+				fs.renameSync(tmp, target);
+			} catch {
+				// Windows Defender / Everything / indexer file lock race: fall back to copy and unlink tmp
+				try {
+					fs.copyFileSync(tmp, target);
+					try { fs.unlinkSync(tmp); } catch {}
+				} catch {
+					/* fallback best effort */
+				}
+			}
 		} catch {
 			/* best effort */
 		}

@@ -149,7 +149,13 @@ export default function (pi: ExtensionAPI) {
 		options: { expanded: boolean; outputPad: number; keyHint: (id: string, label: string) => string },
 		theme: { fg: (name: string, text: string) => string; bg: (name: string, text: string) => string },
 	) => {
-		const content = String(message.content ?? "");
+		const rawContent = message.content;
+		const content =
+			typeof rawContent === "string"
+				? rawContent
+				: Array.isArray(rawContent)
+					? rawContent.map((b) => (typeof b === "string" ? b : (b as { text?: string })?.text ?? "")).join("")
+					: String(rawContent ?? "");
 		const lines = content.split(/\r?\n/);
 		if (options.expanded) {
 			const box = new Box(1, 1, (text: string) => theme.bg("customMessageBg", text));

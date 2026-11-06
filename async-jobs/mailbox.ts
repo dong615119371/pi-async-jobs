@@ -235,9 +235,10 @@ export default function (pi: ExtensionAPI) {
 
 		pi.on("agent_end", (event) => {
 			try {
-				// FIFO attribution: consume only the oldest pending ask per turn so concurrent
-				// asks do not all falsely claim the same turn's output as their own answer.
-				const answering = pendingAsks.length > 0 ? [pendingAsks.shift()!] : [];
+				// Pi drains all queued followUp messages into the same agent turn when idle.
+				// Therefore, the turn's final output addresses all asks accumulated in that run.
+				// Taking only one leaves subsequent asks orphaned with no turn to ever answer them.
+				const answering = pendingAsks.splice(0);
 				fs.appendFileSync(
 					feedFile,
 					JSON.stringify({
