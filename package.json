@@ -1,6 +1,6 @@
 {
   "name": "pi-async-jobs",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Background jobs for Pi's agent loop: a slow command stops holding the whole turn, and its result is delivered later as a message.",
   "keywords": [
     "pi-package",
@@ -21,7 +21,8 @@
   },
   "pi": {
     "extensions": [
-      "./async-jobs/index.ts"
+      "./async-jobs/index.ts",
+      "./async-jobs/mailbox.ts"
     ],
     "skills": [
       "./skills"

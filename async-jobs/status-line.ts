@@ -58,6 +58,17 @@ export function formatElapsed(ms: number): string {
 }
 
 /**
+ * Widget-only coarsening of elapsed time: exact seconds below two minutes, whole
+ * minutes beyond. The widget re-renders whenever its text signature changes, so a
+ * per-second seconds column makes the ticker repaint every second for a column whose
+ * minute value is the only one that matters. Coarse keeps the signature stable.
+ */
+export function formatElapsedCoarse(ms: number): string {
+	if (ms < 120_000) return formatElapsed(ms);
+	return `${Math.floor(ms / 60_000)}m`;
+}
+
+/**
  * Collapse a label onto one line.
  *
  * A command can be a multi-line script, and a newline inside a widget line would inject
@@ -97,7 +108,7 @@ export function buildWidgetLines(jobs: JobRecord[], now: number, waiting?: Set<s
 
 	const lines = jobs.map((job) => {
 		const queued = waiting?.has(job.id) === true;
-		const state = queued ? "排队中" : formatElapsed(now - job.startedAt);
+		const state = queued ? "排队中" : formatElapsedCoarse(now - job.startedAt);
 		const marker = queued ? "-" : MARKER;
 		// Pad by display width, not string length: "排队中" is three characters but six
 		// terminal columns, while "28s" is three of each. Padding by `.length` would

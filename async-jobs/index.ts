@@ -29,7 +29,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, getShellConfig } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { Box, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { BatchCollector, formatBatch } from "./batch.ts";
 import { JobJournal, formatJournalEntry } from "./journal.ts";
@@ -139,6 +139,29 @@ export default function (pi: ExtensionAPI) {
 	// Asked as "what environment am I running in", not "who started me": this way nothing
 	// here needs to know that a caller could be another agent.
 	let interactive = false;
+
+	// Collapsible rendering for job messages. Without a renderer these print full-body,
+	// and a handful of them fill half the transcript. Collapsed shows one line plus the
+	// framework's expand hint; expanding (click or the expand key, `app.tools.expand`)
+	// reveals the full text. The message body itself is unchanged - this is display-only.
+	const renderJobMessage = (
+		message: { content?: unknown },
+		options: { expanded: boolean; outputPad: number; keyHint: (id: string, label: string) => string },
+		theme: { fg: (name: string, text: string) => string; bg: (name: string, text: string) => string },
+	) => {
+		const content = String(message.content ?? "");
+		const lines = content.split(/\r?\n/);
+		if (options.expanded) {
+			const box = new Box(1, 1, (text: string) => theme.bg("customMessageBg", text));
+			for (const line of lines) box.addChild(new Text(line, options.outputPad, 0));
+			return box;
+		}
+		const head = lines[0] ?? "";
+		const more = lines.length > 1 ? theme.fg("dim", ` …(+${lines.length - 1} 行)`) : "";
+		return new Text(`${head}${more} ${options.keyHint("app.tools.expand", "展开")}`, options.outputPad, 0);
+	};
+	pi.registerMessageRenderer("async-job", renderJobMessage);
+	pi.registerMessageRenderer("async-job-batch", renderJobMessage);
 
 	const store = new JobStore(jobRoot());
 
