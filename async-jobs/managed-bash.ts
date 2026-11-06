@@ -271,7 +271,10 @@ async function runSynchronously(
 		if (lines.length > DEFAULT_MAX_LINES || Buffer.byteLength(text, "utf8") > DEFAULT_MAX_BYTES) {
 			truncated = true;
 			text = lines.slice(-DEFAULT_MAX_LINES).join("\n");
-			if (Buffer.byteLength(text, "utf8") > DEFAULT_MAX_BYTES) text = text.slice(-DEFAULT_MAX_BYTES);
+			const buf = Buffer.from(text, "utf8");
+			if (buf.length > DEFAULT_MAX_BYTES) {
+				text = buf.subarray(buf.length - DEFAULT_MAX_BYTES).toString("utf8");
+			}
 			text += `\n\n[Output truncated to the last ${DEFAULT_MAX_LINES} lines / ${formatSize(DEFAULT_MAX_BYTES)}]`;
 		}
 
