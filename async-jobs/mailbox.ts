@@ -156,8 +156,13 @@ export default function (pi: ExtensionAPI) {
 				const buf = fs.readFileSync(boxFile);
 				if (buf.length < readOffset) readOffset = 0; // someone truncated the inbox
 				if (buf.length <= readOffset) return;
-				chunk = buf.slice(readOffset).toString("utf8");
-				readOffset = buf.length;
+				// Boundary safety: only consume up to the last complete newline byte (0x0a).
+				// If a concurrent writer wrote a half-line, wait until the newline arrives
+				// rather than skipping an unparseable fragment and losing it forever.
+				const lastNl = buf.lastIndexOf(0x0a);
+				if (lastNl < readOffset) return;
+				chunk = buf.slice(readOffset, lastNl + 1).toString("utf8");
+				readOffset = lastNl + 1;
 				try {
 					fs.writeFileSync(offsetFile, String(readOffset));
 				} catch {
@@ -230,12 +235,15 @@ export default function (pi: ExtensionAPI) {
 
 		pi.on("agent_end", (event) => {
 			try {
+				// FIFO attribution: consume only the oldest pending ask per turn so concurrent
+				// asks do not all falsely claim the same turn's output as their own answer.
+				const answering = pendingAsks.length > 0 ? [pendingAsks.shift()!] : [];
 				fs.appendFileSync(
 					feedFile,
 					JSON.stringify({
 						ts: Date.now(),
 						text: lastAssistantText(event.messages),
-						answering: pendingAsks.splice(0),
+						answering,
 					}) + "\n",
 				);
 				trimFeed(feedFile);
