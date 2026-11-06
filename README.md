@@ -5,7 +5,7 @@
 <p>
   <img alt="tests" src="https://img.shields.io/badge/assertions-436-brightgreen">
   <img alt="suites" src="https://img.shields.io/badge/suites-11-blue">
-  <img alt="version" src="https://img.shields.io/badge/version-0.2.0-orange">
+  <img alt="version" src="https://img.shields.io/badge/version-0.2.2-orange">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-lightgrey">
   <img alt="platform" src="https://img.shields.io/badge/platform-Windows%20tested-informational">
 </p>
@@ -71,6 +71,9 @@ bash(command)
 
 | 特性                 | 说明                                                                      |
 | -------------------- | ------------------------------------------------------------------------- |
+| **原生后台任务折叠** | 多个任务并发不再刷爆屏幕！原生消息渲染器，默认收起为一行摘要，支持按键或点击展开全文 |
+| **状态栏智能降频**   | 任务超过 2 分钟自动切换分钟级刷新，避免终端状态栏每秒重新排版带来的视觉抖动 |
+| **跨会话信箱收件桥** | 会话启动时自动就绪（`mailbox.ts`），接收来自其他会话的排队信件，彻底支持会话间协同 |
 | bash 自动后台化      | 异步模式开启后，命令超过宽限期仍未结束就转后台，返回作业号                |
 | `expectSeconds`      | 给出**任务耗时**估计来决定等多久。不杀命令、不限运行时长                  |
 | `mode: "background"` | 完全不等待，立即返回作业号                                                |
@@ -87,7 +90,7 @@ bash(command)
 **推荐从 git 安装**，可以锁定版本：
 
 ```bash
-pi install git:github.com/dong615119371/pi-async-jobs@v0.2.0
+pi install git:github.com/dong615119371/pi-async-jobs@v0.2.2
 ```
 
 不带 `@v0.2.0` 会装最新的 `main`，适合想跟开发进度的情况。
