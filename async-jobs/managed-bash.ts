@@ -158,7 +158,7 @@ export function registerManagedBash(pi: ExtensionAPI, options: ManagedBashOption
 
 			try {
 				const { id, outcome } = await engine.runWithGrace(
-					{ command: params.command, name, timeoutSeconds, channel: "generic" },
+					{ command: params.command, name, timeoutSeconds, channel: "generic", cwd: ctx.cwd },
 					plan.graceMs,
 				);
 				if (outcome === "adopted") {

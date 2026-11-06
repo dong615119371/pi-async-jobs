@@ -153,16 +153,33 @@ export default function (pi: ExtensionAPI) {
 		const drainBox = () => {
 			let chunk: string;
 			try {
-				const buf = fs.readFileSync(boxFile);
-				if (buf.length < readOffset) readOffset = 0; // someone truncated the inbox
-				if (buf.length <= readOffset) return;
+				let size = 0;
+				try {
+					size = fs.statSync(boxFile).size;
+				} catch {
+					return;
+				}
+				if (size < readOffset) readOffset = 0; // someone truncated the inbox
+				if (size <= readOffset) return;
+
+				const diff = size - readOffset;
+				const buf = Buffer.allocUnsafe(diff);
+				const fd = fs.openSync(boxFile, "r");
+				let bytesRead = 0;
+				try {
+					bytesRead = fs.readSync(fd, buf, 0, diff, readOffset);
+				} finally {
+					try { fs.closeSync(fd); } catch {}
+				}
+				if (bytesRead <= 0) return;
+
 				// Boundary safety: only consume up to the last complete newline byte (0x0a).
 				// If a concurrent writer wrote a half-line, wait until the newline arrives
 				// rather than skipping an unparseable fragment and losing it forever.
-				const lastNl = buf.lastIndexOf(0x0a);
-				if (lastNl < readOffset) return;
-				chunk = buf.slice(readOffset, lastNl + 1).toString("utf8");
-				readOffset = lastNl + 1;
+				const lastNl = buf.lastIndexOf(0x0a, bytesRead - 1);
+				if (lastNl < 0) return;
+				chunk = buf.subarray(0, lastNl + 1).toString("utf8");
+				readOffset += lastNl + 1;
 				try {
 					fs.writeFileSync(offsetFile, String(readOffset));
 				} catch {

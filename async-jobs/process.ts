@@ -185,9 +185,16 @@ export async function killProcessTree(pid: number, isAlive?: () => boolean): Pro
 			return { terminated: isAlive ? !isAlive() : true, leaked: true, notes };
 		}
 
-		const graceDelay = 1200;
-		await new Promise((resolve) => setTimeout(resolve, graceDelay));
-		if (isAlive && !isAlive()) return { terminated: true, leaked: false, notes };
+		// If taskkill without /F failed (console processes on Windows 100% fail with
+		// "can only be terminated forcefully"), do not waste 1200ms waiting for a
+		// termination that the OS already rejected — escalate to force immediately.
+		if (graceful.exitCode === 0) {
+			const graceDelay = 1200;
+			await new Promise((resolve) => setTimeout(resolve, graceDelay));
+			if (isAlive && !isAlive()) return { terminated: true, leaked: false, notes };
+		} else {
+			if (isAlive && !isAlive()) return { terminated: true, leaked: false, notes };
+		}
 
 		const forced = await runTaskkill(pid, "force");
 		if (forced.timedOut) notes.push(`forced taskkill timed out: ${forced.stderr.trim()}`);

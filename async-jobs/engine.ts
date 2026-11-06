@@ -461,6 +461,7 @@ export class JobEngine {
 			child = spawn(shell.shell, spawnArgs, {
 				shell: false,
 				windowsHide: true,
+				cwd: options.cwd || undefined,
 				stdio: [viaStdin ? "pipe" : "ignore", "pipe", "pipe"],
 				env: buildShellEnv(shell.binDir),
 			});

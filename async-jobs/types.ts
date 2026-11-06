@@ -87,6 +87,8 @@ export interface JobRecord {
 export interface StartProcessOptions {
 	name?: string;
 	command: string;
+	/** Working directory for the process. Defaults to the host process cwd. */
+	cwd?: string;
 	/** Shell to run through. Defaults to the platform shell. */
 	shell?: string;
 	shellArgs?: string[];
