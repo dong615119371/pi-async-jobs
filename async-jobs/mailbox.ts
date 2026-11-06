@@ -151,6 +151,17 @@ export default function (pi: ExtensionAPI) {
 			});
 		});
 
+		server.on("error", (err: any) => {
+			console.error(`[session-relay] Named pipe server error on ${pipePath}:`, err?.message);
+			try {
+				fs.mkdirSync(liveDir, { recursive: true });
+				fs.writeFileSync(
+					liveCard,
+					JSON.stringify({ id, name, cwd, pid: process.pid, pipe: pipePath, error: err?.message || String(err) }),
+				);
+			} catch {}
+		});
+
 		try {
 			server.listen(pipePath, () => {
 				// Publish live presence card
@@ -159,22 +170,31 @@ export default function (pi: ExtensionAPI) {
 					fs.writeFileSync(liveCard, JSON.stringify({ id, name, cwd, pid: process.pid, pipe: pipePath }));
 				} catch {}
 			});
-		} catch {
-			// Failed to bind pipe; stay quiet
+		} catch (err: any) {
+			console.error(`[session-relay] Failed to bind pipe ${pipePath}:`, err?.message);
+			try {
+				fs.mkdirSync(liveDir, { recursive: true });
+				fs.writeFileSync(
+					liveCard,
+					JSON.stringify({ id, name, cwd, pid: process.pid, pipe: pipePath, error: err?.message || String(err) }),
+				);
+			} catch {}
 			return;
 		}
 
 		pi.on("agent_end", (event) => {
-			if (pendingAskSockets.length === 0) return;
-			const answer = lastAssistantText(event.messages);
-			// Deliver conclusion directly through the awaiting long-lived sockets
+			// Deliver conclusion strictly to the single oldest awaiting socket for this turn.
+			// Do NOT broadcast to all sockets in a while-loop: concurrent asks from different
+			// peers must each be answered by their own turn, not prematurely closed with another turn's output.
 			while (pendingAskSockets.length > 0) {
 				const sock = pendingAskSockets.shift();
 				if (sock && !sock.destroyed) {
+					const answer = lastAssistantText(event.messages);
 					try {
 						sock.write(JSON.stringify({ ok: true, text: answer || "(the target answered with no text)" }) + "\n");
 						sock.end();
 					} catch {}
+					break; // Strictly one ask resolved per agent_end turn
 				}
 			}
 		});
